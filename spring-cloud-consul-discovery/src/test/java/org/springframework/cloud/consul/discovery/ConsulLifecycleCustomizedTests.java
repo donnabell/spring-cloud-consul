@@ -16,32 +16,32 @@
 
 package org.springframework.cloud.consul.discovery;
 
-import java.util.List;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT;
 
-import com.ecwid.consul.v1.ConsulClient;
+import java.util.List;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.test.SpringApplicationConfiguration;
-import org.springframework.boot.test.WebIntegrationTest;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.cloud.consul.serviceregistry.ConsulServiceRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 
 /**
  * @author Marcin Biegan
  */
 @RunWith(SpringJUnit4ClassRunner.class)
-@SpringApplicationConfiguration(classes = ConsulLifecycleCustomizedTests.MyTestConfig.class)
-@WebIntegrationTest(value = { "spring.application.name=testCustomLifecycle" }, randomPort = true)
+@SpringBootTest(classes = ConsulLifecycleCustomizedTests.MyTestConfig.class,
+		webEnvironment = RANDOM_PORT,
+		properties = "spring.application.name=testCustomLifecycle")
 public class ConsulLifecycleCustomizedTests {
 
 	@Autowired
@@ -69,17 +69,17 @@ public class ConsulLifecycleCustomizedTests {
 	@EnableAutoConfiguration
 	public static class MyTestConfig {
 		@Bean
-		public ConsulLifecycle customizedLifecycle(ConsulClient client,
+		public ConsulLifecycle customizedLifecycle(ConsulServiceRegistry serviceRegistry,
 				ConsulDiscoveryProperties properties, HeartbeatProperties ttlConfig) {
-			return new CustomConsulLifecycle(client, properties, ttlConfig);
+			return new CustomConsulLifecycle(serviceRegistry, properties, ttlConfig);
 		}
 	}
 
 	public static class CustomConsulLifecycle extends ConsulLifecycle {
 		@Autowired
-		public CustomConsulLifecycle(ConsulClient client,
+		public CustomConsulLifecycle(ConsulServiceRegistry serviceRegistry,
 				ConsulDiscoveryProperties properties, HeartbeatProperties ttlConfig) {
-			super(client, properties, ttlConfig);
+			super(serviceRegistry, properties, ttlConfig);
 		}
 
 		@Override

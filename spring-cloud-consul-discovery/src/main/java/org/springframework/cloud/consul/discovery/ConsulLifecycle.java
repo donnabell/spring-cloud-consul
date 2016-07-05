@@ -21,41 +21,41 @@ import java.util.List;
 
 import javax.servlet.ServletContext;
 
-import lombok.extern.slf4j.Slf4j;
-
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cloud.client.discovery.AbstractDiscoveryLifecycle;
+import org.springframework.cloud.client.serviceregistry.AbstractAutoServiceRegistration;
+import org.springframework.cloud.consul.serviceregistry.ConsulRegistration;
+import org.springframework.cloud.consul.serviceregistry.ConsulServiceRegistry;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
-import com.ecwid.consul.v1.ConsulClient;
 import com.ecwid.consul.v1.agent.model.NewService;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * @author Spencer Gibb
  */
 @Slf4j
-public class ConsulLifecycle extends AbstractDiscoveryLifecycle {
+public class ConsulLifecycle extends AbstractAutoServiceRegistration<ConsulRegistration> {
 
 	public static final char SEPARATOR = '-';
-
-	private ConsulClient client;
 
 	private ConsulDiscoveryProperties properties;
 
 	private HeartbeatProperties ttlConfig;
 
 	@Autowired(required = false)
-	private TtlScheduler ttlScheduler;
-
-	@Autowired(required = false)
 	private ServletContext servletContext;
 
 	private NewService service = new NewService();
+	private ConsulRegistration managementRegistration;
+	private ConsulRegistration registration;
 
-	public ConsulLifecycle(ConsulClient client, ConsulDiscoveryProperties properties, HeartbeatProperties ttlConfig) {
-		this.client = client;
+	public ConsulLifecycle(ConsulServiceRegistry serviceRegistry,
+						   ConsulDiscoveryProperties properties,
+						   HeartbeatProperties ttlConfig) {
+		super(serviceRegistry);
 		this.properties = properties;
 		this.ttlConfig = ttlConfig;
 	}
@@ -77,36 +77,35 @@ public class ConsulLifecycle extends AbstractDiscoveryLifecycle {
 	}
 
 	@Override
-	protected void register() {
-		if (!this.properties.isRegister()) {
-			log.debug("Registration disabled.");
-			return;
-		}
-		Assert.notNull(service.getPort(), "service.port has not been set");
-		String appName = getAppName();
-		service.setId(getServiceId());
-		if(!properties.isPreferAgentAddress()) {
-			service.setAddress(properties.getHostname());
-		}
-		service.setName(normalizeForDns(appName));
-		service.setTags(createTags());
-
-		// If an alternate external port is specified, register using it instead
-		if (properties.getPort() != null) {
-			service.setPort(properties.getPort());
-		}
-
-		if (this.properties.isRegisterHealthCheck()) {
-			Integer checkPort;
-			if (shouldRegisterManagement()) {
-				checkPort = getManagementPort();
-			} else {
-				checkPort = service.getPort();
+	protected ConsulRegistration getRegistration() {
+		if (this.registration == null) {
+			Assert.notNull(service.getPort(), "service.port has not been set");
+			String appName = getAppName();
+			service.setId(getServiceId());
+			if (!properties.isPreferAgentAddress()) {
+				service.setAddress(properties.getHostname());
 			}
-			service.setCheck(createCheck(checkPort));
-		}
+			service.setName(normalizeForDns(appName));
+			service.setTags(createTags());
 
-		register(service);
+			// If an alternate external port is specified, register using it instead
+			if (properties.getPort() != null) {
+				service.setPort(properties.getPort());
+			}
+
+			if (this.properties.isRegisterHealthCheck()) {
+				Integer checkPort;
+				if (shouldRegisterManagement()) {
+					checkPort = getManagementPort();
+				} else {
+					checkPort = service.getPort();
+				}
+				service.setCheck(createCheck(checkPort));
+			}
+
+			registration = new ConsulRegistration(service, this.properties.getAclToken());
+		}
+		return registration;
 	}
 
 	private NewService.Check createCheck(Integer port) {
@@ -137,42 +136,25 @@ public class ConsulLifecycle extends AbstractDiscoveryLifecycle {
 	}
 
 	@Override
-	protected void registerManagement() {
-		if (!this.properties.isRegister()) {
-			return;
-		}
-		NewService management = new NewService();
-		management.setId(getManagementServiceId());
-		management.setAddress(properties.getHostname());
-		management.setName(getManagementServiceName());
-		management.setPort(getManagementPort());
-		management.setTags(properties.getManagementTags());
-		management.setCheck(createCheck(getManagementPort()));
+	protected ConsulRegistration getManagementRegistration() {
+		if (managementRegistration == null) {
+			NewService management = new NewService();
+			management.setId(getManagementServiceId());
+			management.setAddress(properties.getHostname());
+			management.setName(getManagementServiceName());
+			management.setPort(getManagementPort());
+			management.setTags(properties.getManagementTags());
+			management.setCheck(createCheck(getManagementPort()));
 
-		register(management);
-	}
-
-	protected void register(NewService newService) {
-		log.info("Registering service with consul: {}", newService.toString());
-		client.agentServiceRegister(newService, properties.getAclToken());
-		if (ttlConfig.isEnabled() && ttlScheduler != null) {
-			ttlScheduler.add(newService);
+			managementRegistration = new ConsulRegistration(management,
+					this.properties.getAclToken());
 		}
+		return managementRegistration;
 	}
 
 	@Override
 	protected Object getConfiguration() {
 		return properties;
-	}
-
-	@Override
-	protected void deregister() {
-		deregister(getServiceId());
-	}
-
-	@Override
-	protected void deregisterManagement() {
-		deregister(getManagementServiceId());
 	}
 
 	private List<String> createTags() {
@@ -185,20 +167,9 @@ public class ConsulLifecycle extends AbstractDiscoveryLifecycle {
 		return tags;
 	}
 
-	private void deregister(String serviceId) {
-		if (!this.properties.isRegister()) {
-			return;
-		}
-		if (ttlScheduler != null) {
-			ttlScheduler.remove(serviceId);
-		}
-		log.info("Deregistering service with consul: {}", serviceId);
-		client.agentServiceDeregister(serviceId);
-	}
-
 	@Override
 	protected boolean isEnabled() {
-		return this.properties.getLifecycle().isEnabled();
+		return this.properties.getLifecycle().isEnabled() && this.properties.isRegister();
 	}
 	
 	@Override

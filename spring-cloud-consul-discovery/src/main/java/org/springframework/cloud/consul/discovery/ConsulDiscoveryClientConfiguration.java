@@ -23,6 +23,7 @@ import org.springframework.boot.autoconfigure.web.ServerProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.commons.util.InetUtils;
 import org.springframework.cloud.consul.ConditionalOnConsulEnabled;
+import org.springframework.cloud.consul.serviceregistry.ConsulServiceRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -45,9 +46,16 @@ public class ConsulDiscoveryClientConfiguration {
 
 	@Bean
 	@ConditionalOnMissingBean
-	public ConsulLifecycle consulLifecycle(ConsulDiscoveryProperties discoveryProperties,
-			HeartbeatProperties heartbeatProperties) {
-		return new ConsulLifecycle(consulClient, discoveryProperties, heartbeatProperties);
+	public ConsulLifecycle consulLifecycle(ConsulServiceRegistry serviceRegistry,
+										   ConsulDiscoveryProperties discoveryProperties,
+										   HeartbeatProperties heartbeatProperties) {
+		return new ConsulLifecycle(serviceRegistry, discoveryProperties, heartbeatProperties);
+	}
+
+	@Bean
+	@ConditionalOnMissingBean
+	public ConsulServiceRegistry serviceRegistry(ConsulClient client, HeartbeatProperties ttlConfig) {
+		return new ConsulServiceRegistry(client, ttlConfig);
 	}
 
 	@Bean

@@ -130,7 +130,9 @@ public class ConsulDiscoveryProperties {
 
 	/**
 	 * Register as a service in consul.
+	 * @deprecated see Lifeycle.enabled;
 	 */
+	@Deprecated
 	private boolean register = true;
 
 	/**
